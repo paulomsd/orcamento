@@ -1,37 +1,39 @@
 import { NextResponse } from "next/server";
-import ExcelJS from "exceljs";
-import { calculateOrcamento, getOrcamentoDetalhado } from "@/lib/calc";
+import * as XLSX from "xlsx";
+import { calculateOrcamentoDetalhado } from "@/lib/calc";
+import { createClient } from "@/lib/supabase/server";
 
-export async function GET(_: Request, { params }: { params: { id: string }}){
-  const { orcamento, itensDetalhados } = await getOrcamentoDetalhado(params.id);
-  const { total, total_com_bdi } = await calculateOrcamento(params.id);
+export async function GET(_: Request, { params }: { params: { id: string } }) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.redirect(new URL("/login", process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"));
+  }
 
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("Orçamento");
+  const id = params.id;
+  const resumo = await calculateOrcamentoDetalhado(id);
 
-  ws.columns = [
-    { header: "Código", key: "codigo", width: 18 },
-    { header: "Composição", key: "nome", width: 60 },
-    { header: "Quantidade", key: "quantidade", width: 14 },
-    { header: "Unitário (R$)", key: "unitario", width: 16 },
-    { header: "Total (R$)", key: "total", width: 16 },
-  ];
-
-  itensDetalhados.forEach(i=> ws.addRow({
-    codigo: i.codigo, nome: i.nome, quantidade: i.quantidade,
-    unitario: i.unitario, total: i.total
+  const rows = resumo.itens.map(i => ({
+    Composicao: `${i.codigo} - ${i.nome}`,
+    Unitario: Number(i.custo_unitario.toFixed(2)),
+    Quantidade: i.quantidade,
+    Subtotal: Number(i.subtotal.toFixed(2)),
   }));
 
-  ws.addRow({});
-  ws.addRow({ nome: "Custo direto", total: total });
-  ws.addRow({ nome: "BDI (%)", quantidade: orcamento.bdi ?? 0 });
-  ws.addRow({ nome: "TOTAL", total: total_com_bdi });
+  rows.push({ Composicao: "", Unitario: "", Quantidade: "Custo direto", Subtotal: Number(resumo.total.toFixed(2)) });
+  rows.push({ Composicao: "", Unitario: "", Quantidade: "BDI (%)", Subtotal: resumo.bdi });
+  rows.push({ Composicao: "", Unitario: "", Quantidade: "Total", Subtotal: Number(resumo.total_com_bdi.toFixed(2)) });
 
-  const buffer = await wb.xlsx.writeBuffer();
-  return new NextResponse(buffer, {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows, { header: ["Composicao", "Unitario", "Quantidade", "Subtotal"] });
+  XLSX.utils.book_append_sheet(wb, ws, "Orcamento");
+
+  const out = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+
+  return new NextResponse(Buffer.from(out), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="orcamento-${params.id}.xlsx"`
+      "Content-Disposition": `attachment; filename="orcamento-${id}.xlsx"`
     }
   });
 }
