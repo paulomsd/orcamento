@@ -32,7 +32,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
       }
 
-      // Redireciona para a página do orçamento recém-criado
       return NextResponse.redirect(new URL(`/orcamentos/${data!.id}`, request.url), { status: 303 });
     }
 
@@ -48,7 +47,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, error: "Informe o código da composição." }, { status: 400 });
       }
 
-      // busca a composicao pelo codigo
       const { data: comp, error: compErr } = await supabase
         .from("composicoes")
         .select("id")
@@ -68,6 +66,24 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.redirect(new URL(`/orcamentos/${orcamento_id}`, request.url), { status: 303 });
+    }
+
+    if (action === "delete_orcamento") {
+      const id = String(form.get("id") || "");
+      if (!id) {
+        return NextResponse.json({ ok: false, error: "ID ausente." }, { status: 400 });
+      }
+
+      // Apaga itens primeiro (por segurança, mesmo com ON DELETE CASCADE em alguns esquemas)
+      await supabase.from("orcamento_itens").delete().eq("orcamento_id", id);
+
+      // Apaga o orçamento (RLS garante que o usuário só apaga o que é dele)
+      const { error } = await supabase.from("orcamentos").delete().eq("id", id);
+      if (error) {
+        return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+      }
+
+      return NextResponse.redirect(new URL("/orcamentos", request.url), { status: 303 });
     }
 
     return NextResponse.json({ ok: false, error: "Ação inválida." }, { status: 400 });
