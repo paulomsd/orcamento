@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { calculateOrcamentoDetalhado } from "@/lib/calc";
+import DeleteItemButton from "./DeleteItem";
 
 export default async function Page({ params }: { params: { id: string } }) {
   const supabase = createClient();
@@ -10,7 +11,6 @@ export default async function Page({ params }: { params: { id: string } }) {
 
   const id = params.id;
 
-  // Dados do orçamento
   const { data: orcamento } = await supabase
     .from("orcamentos")
     .select("*")
@@ -21,7 +21,6 @@ export default async function Page({ params }: { params: { id: string } }) {
     return <div className="p-4">Orçamento não encontrado.</div>;
   }
 
-  // Detalhamento e totais
   const resumo = await calculateOrcamentoDetalhado(id);
 
   return (
@@ -32,6 +31,12 @@ export default async function Page({ params }: { params: { id: string } }) {
           <Link className="text-sm border rounded-lg px-3 py-2" href="/orcamentos">
             Voltar
           </Link>
+          <a className="text-sm bg-slate-900 text-white rounded-lg px-3 py-2" href={`/api/orcamentos/${id}/pdf`}>
+            Exportar PDF
+          </a>
+          <a className="text-sm bg-slate-900 text-white rounded-lg px-3 py-2" href={`/api/orcamentos/${id}/xlsx`}>
+            Exportar XLSX
+          </a>
         </div>
       </div>
 
@@ -52,7 +57,7 @@ export default async function Page({ params }: { params: { id: string } }) {
         </div>
       </form>
 
-      {/* Tabela de itens com subtotais */}
+      {/* Tabela detalhada */}
       <div className="bg-white rounded-xl border">
         <table className="w-full text-sm">
           <thead className="bg-slate-50">
@@ -61,6 +66,7 @@ export default async function Page({ params }: { params: { id: string } }) {
               <th className="text-right p-2">Unitário</th>
               <th className="text-right p-2">Qtd</th>
               <th className="text-right p-2">Subtotal</th>
+              <th className="text-right p-2">Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -70,26 +76,29 @@ export default async function Page({ params }: { params: { id: string } }) {
                 <td className="p-2 text-right">R$ {i.custo_unitario.toFixed(2)}</td>
                 <td className="p-2 text-right">{i.quantidade}</td>
                 <td className="p-2 text-right">R$ {i.subtotal.toFixed(2)}</td>
+                <td className="p-2 text-right">
+                  <DeleteItemButton itemId={i.id} orcamentoId={id} />
+                </td>
               </tr>
             ))}
             {!resumo.itens.length && (
               <tr>
-                <td colSpan={4} className="p-4 text-slate-500">Nenhum item ainda.</td>
+                <td colSpan={5} className="p-4 text-slate-500">Nenhum item ainda.</td>
               </tr>
             )}
           </tbody>
           {resumo.itens.length > 0 && (
             <tfoot>
               <tr className="border-t bg-slate-50 font-medium">
-                <td className="p-2 text-right" colSpan={3}>Custo direto</td>
+                <td className="p-2 text-right" colSpan={4}>Custo direto</td>
                 <td className="p-2 text-right">R$ {resumo.total.toFixed(2)}</td>
               </tr>
               <tr className="border-t">
-                <td className="p-2 text-right" colSpan={3}>BDI</td>
+                <td className="p-2 text-right" colSpan={4}>BDI</td>
                 <td className="p-2 text-right">{resumo.bdi}%</td>
               </tr>
               <tr className="border-t bg-slate-100 font-semibold">
-                <td className="p-2 text-right" colSpan={3}>Total</td>
+                <td className="p-2 text-right" colSpan={4}>Total</td>
                 <td className="p-2 text-right">R$ {resumo.total_com_bdi.toFixed(2)}</td>
               </tr>
             </tfoot>
@@ -97,12 +106,14 @@ export default async function Page({ params }: { params: { id: string } }) {
         </table>
       </div>
 
-      {/* Card Resumo (compacto) */}
+      {/* Card Resumo */}
       <div className="bg-white rounded-xl border p-4">
-        <div className="text-sm text-slate-500 mb-2">Resumo</div>
-        <div className="text-sm">Custo direto: <b>R$ {resumo.total.toFixed(2)}</b></div>
-        <div className="text-sm">BDI: <b>{resumo.bdi}%</b></div>
-        <div className="text-lg mt-2">Total: <b>R$ {resumo.total_com_bdi.toFixed(2)}</b></div>
+        <h2 className="text-base font-medium mb-2">Resumo</h2>
+        <div className="grid gap-2">
+          <div>Custo direto: <span className="font-semibold">R$ {resumo.total.toFixed(2)}</span></div>
+          <div>BDI: <span className="font-semibold">{resumo.bdi}%</span></div>
+          <div className="text-lg">Total: <span className="font-bold">R$ {resumo.total_com_bdi.toFixed(2)}</span></div>
+        </div>
       </div>
     </div>
   );
