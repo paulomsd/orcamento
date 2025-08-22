@@ -1,153 +1,109 @@
+// lib/calc.ts
+// Cálculos do orçamento com detalhamento por item.
+// Observação: executa no servidor (usa o client server-side do Supabase).
+
 import { createClient } from "@/lib/supabase/server";
 
-type Insumo = { id: string, codigo: string, descricao: string, unidade: string, preco: number };
-type Composicao = { id: string, codigo: string, nome: string };
-type ComposicaoItem = {
+type ItemDetalhado = {
   id: string;
-  composicao_id: string;
-  item_type: "insumo" | "composicao";
-  insumo_id?: string | null;
-  subcomposicao_id?: string | null;
-  coeficiente: number;
+  codigo: string;
+  nome: string;
+  quantidade: number;
+  custo_unitario: number;   // custo por 1 unidade da composição
+  subtotal: number;         // quantidade * custo_unitario
+};
+
+export type ResumoDetalhado = {
+  itens: ItemDetalhado[];
+  total: number;            // custo direto (sem BDI)
+  bdi: number;              // %
+  total_com_bdi: number;    // total + BDI
 };
 
 /**
- * Calcula o total do orçamento (custo direto) e aplica BDI.
+ * Retorna o custo unitário (1 unidade) de uma composição pelo ID.
+ * Soma insumos e subcomposições recursivamente.
  */
-export async function calculateOrcamento(orcamentoId: string) {
+async function custoUnitarioByCompId(composicaoId: string): Promise<number> {
   const supabase = createClient();
 
-  const { data: orcamento } = await supabase
-    .from("orcamentos")
-    .select("*")
-    .eq("id", orcamentoId)
-    .single();
-  if (!orcamento) return { total: 0, bdi: 0, total_com_bdi: 0 };
+  // Busca itens da composição
+  const { data: itens, error } = await supabase
+    .from("composicao_itens")
+    .select(`id, item_type, coeficiente, insumo_id, subcomposicao_id,
+             insumos:insumo_id(preco),
+             subcomp:subcomposicao_id(id)`)
+    .eq("composicao_id", composicaoId);
 
-  const { data: itens } = await supabase
-    .from("orcamento_itens")
-    .select("id, quantidade, composicao_id")
-    .eq("orcamento_id", orcamentoId);
-
-  const cache = new Map<string, number>(); // composicao_id -> custo unitário
-
-  async function custoComposicaoUnitario(composicao_id: string): Promise<number> {
-    if (cache.has(composicao_id)) return cache.get(composicao_id)!;
-
-    const { data: items } = await supabase
-      .from("composicao_itens")
-      .select("id, item_type, coeficiente, insumo_id, subcomposicao_id")
-      .eq("composicao_id", composicao_id);
-
-    let total = 0;
-    for (const it of (items ?? []) as ComposicaoItem[]) {
-      if (it.item_type === "insumo" && it.insumo_id) {
-        const { data: insumo } = await supabase
-          .from("insumos")
-          .select("preco")
-          .eq("id", it.insumo_id)
-          .single();
-        total += (Number(insumo?.preco) || 0) * Number(it.coeficiente || 0);
-      } else if (it.item_type === "composicao" && it.subcomposicao_id) {
-        const sub = await custoComposicaoUnitario(it.subcomposicao_id);
-        total += sub * Number(it.coeficiente || 0);
-      }
-    }
-
-    cache.set(composicao_id, total);
-    return total;
-  }
+  if (error || !itens) return 0;
 
   let total = 0;
-  for (const it of (itens ?? [])) {
-    const unit = await custoComposicaoUnitario(String(it.composicao_id));
-    total += unit * Number(it.quantidade || 0);
+
+  for (const it of itens as any[]) {
+    const coef = Number(it.coeficiente || 0);
+    if (it.item_type === "insumo") {
+      const preco = Number(it.insumos?.preco || 0);
+      total += coef * preco;
+    } else if (it.item_type === "composicao" && it.subcomp?.id) {
+      const subCost = await custoUnitarioByCompId(it.subcomp.id);
+      total += coef * subCost;
+    }
   }
 
-  const bdi = Number(orcamento.bdi ?? 0);
-  const total_com_bdi = total * (1 + bdi / 100);
-  return { total, bdi, total_com_bdi };
+  return total;
 }
 
 /**
- * Retorna orçamento + itens detalhados (código, nome, qtd, unitário, total)
- * Lidando com o caso em que `composicoes` pode vir como objeto OU array.
+ * Calcula o resumo detalhado do orçamento:
+ * - Para cada item: custo_unitario e subtotal
+ * - Totais: custo direto, BDI, total com BDI
  */
-export async function getOrcamentoDetalhado(orcamentoId: string) {
+export async function calculateOrcamentoDetalhado(orcamentoId: string): Promise<ResumoDetalhado> {
   const supabase = createClient();
 
-  const { data: orcamento } = await supabase
+  // Orçamento (para obter BDI)
+  const { data: orc } = await supabase
     .from("orcamentos")
-    .select("*")
+    .select("bdi")
     .eq("id", orcamentoId)
     .single();
 
+  const bdi = Number(orc?.bdi || 0);
+
+  // Itens do orçamento com dados da composição
   const { data: itens } = await supabase
     .from("orcamento_itens")
-    .select("id, quantidade, composicoes(id, codigo, nome)")
-    .eq("orcamento_id", orcamentoId);
+    .select("id, quantidade, composicoes:composicao_id(id, codigo, nome)")
+    .eq("orcamento_id", orcamentoId)
+    .order("id", { ascending: true });
 
-  // Função auxiliar: resolve composicao (objeto ou array)
-  function resolveComp(raw: any): Composicao | undefined {
-    if (!raw) return undefined;
-    return Array.isArray(raw) ? raw[0] : raw;
-  }
+  const detalhes: ItemDetalhado[] = [];
 
-  // Cache p/ custo unitário
-  const unitCache = new Map<string, number>();
-  async function calculateComposicaoUnitario(composicao_id: string): Promise<number> {
-    if (unitCache.has(composicao_id)) return unitCache.get(composicao_id)!;
-
-    const { data: items } = await supabase
-      .from("composicao_itens")
-      .select("id, item_type, coeficiente, insumo_id, subcomposicao_id")
-      .eq("composicao_id", composicao_id);
-
-    let total = 0;
-    for (const it of (items ?? []) as ComposicaoItem[]) {
-      if (it.item_type === "insumo" && it.insumo_id) {
-        const { data: insumo } = await supabase
-          .from("insumos")
-          .select("preco")
-          .eq("id", it.insumo_id)
-          .single();
-        total += (Number(insumo?.preco) || 0) * Number(it.coeficiente || 0);
-      } else if (it.item_type === "composicao" && it.subcomposicao_id) {
-        const sub = await calculateComposicaoUnitario(it.subcomposicao_id);
-        total += sub * Number(it.coeficiente || 0);
-      }
-    }
-
-    unitCache.set(composicao_id, total);
-    return total;
-  }
-
-  const itensDetalhados: {
-    codigo: string;
-    nome: string;
-    quantidade: number;
-    unitario: number;
-    total: number;
-  }[] = [];
-
-  for (const it of (itens ?? [])) {
-    const comp = resolveComp((it as any).composicoes);
+  for (const row of (itens || []) as any[]) {
+    const comp = Array.isArray(row.composicoes) ? row.composicoes[0] : row.composicoes;
     if (!comp?.id) continue;
 
-    const unit = await calculateComposicaoUnitario(String(comp.id));
-    const qtd = Number((it as any).quantidade || 0);
+    const unit = await custoUnitarioByCompId(comp.id);
+    const qtd = Number(row.quantidade || 0);
+    const subtotal = unit * qtd;
 
-    itensDetalhados.push({
-      codigo: String(comp.codigo ?? ""),
-      nome: String(comp.nome ?? ""),
+    detalhes.push({
+      id: row.id,
+      codigo: comp.codigo,
+      nome: comp.nome,
       quantidade: qtd,
-      unitario: unit,
-      total: unit * qtd,
+      custo_unitario: unit,
+      subtotal,
     });
   }
 
-  // Também devolvemos o total para quem quiser usar
-  const { total } = await calculateOrcamento(orcamentoId);
+  const total = detalhes.reduce((acc, it) => acc + it.subtotal, 0);
+  const total_com_bdi = total * (1 + bdi / 100);
 
-  return { orcamento: orcamento!, itensDetalhados, total };
+  return {
+    itens: detalhes,
+    total,
+    bdi,
+    total_com_bdi,
+  };
 }
