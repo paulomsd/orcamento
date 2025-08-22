@@ -2,15 +2,17 @@ import { NextResponse } from "next/server";
 import PDFDocument from "pdfkit";
 import { calculateOrcamento, getOrcamentoDetalhado } from "@/lib/calc";
 
-export async function GET(_: Request, { params }: { params: { id: string }}){
+export async function GET(_: Request, { params }: { params: { id: string }}) {
   const { orcamento, itensDetalhados } = await getOrcamentoDetalhado(params.id);
   const { total, total_com_bdi } = await calculateOrcamento(params.id);
 
   const doc = new PDFDocument({ size: "A4", margin: 40 });
-  const chunks: Buffer[] = [];
-  doc.on("data", (c)=>chunks.push(c));
-  const streamEnd = new Promise<Buffer>((resolve)=>{
-    doc.on("end", ()=> resolve(Buffer.concat(chunks)));
+
+  // 👉 use Uint8Array para agradar o TypeScript
+  const chunks: Uint8Array[] = [];
+  doc.on("data", (c: Uint8Array) => chunks.push(c));
+  const streamEnd = new Promise<Buffer>((resolve) => {
+    doc.on("end", () => resolve(Buffer.concat(chunks.map(c => Buffer.from(c)))));
   });
 
   doc.fontSize(16).text(`Orçamento: ${orcamento.nome}`);
@@ -20,9 +22,9 @@ export async function GET(_: Request, { params }: { params: { id: string }}){
 
   doc.fontSize(12).text("Itens:");
   doc.moveDown(0.5);
-  itensDetalhados.forEach((item)=>{
+  itensDetalhados.forEach((item) => {
     doc.fontSize(10).text(`${item.codigo} - ${item.nome}`);
-    doc.text(`Qtd: ${item.quantidade}  •  Unitário: R$ ${item.unitario.toFixed(2)}  •  Total: R$ ${(item.total).toFixed(2)}`);
+    doc.text(`Qtd: ${item.quantidade}  •  Unitário: R$ ${item.unitario.toFixed(2)}  •  Total: R$ ${item.total.toFixed(2)}`);
     doc.moveDown(0.3);
   });
 
