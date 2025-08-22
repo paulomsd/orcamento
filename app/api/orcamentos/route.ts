@@ -13,15 +13,18 @@ export async function POST(request: Request) {
 
   try {
     if (action === "create_orcamento") {
-      const nome = String(form.get("nome") || "").trim();
+      const nomeRaw = String(form.get("nome") || "").trim();
+      const nome = nomeRaw;
       const uf = String(form.get("uf") || "").trim() || null;
       const bdiStr = String(form.get("bdi") || "0");
       const bdi = Number(bdiStr || 0);
 
       if (!nome) {
-        return NextResponse.json({ ok: false, error: "Nome é obrigatório." }, { status: 400 });
+        const u = new URL("/orcamentos?error=Informe%20o%20nome%20do%20or%C3%A7amento", request.url);
+        return NextResponse.redirect(u, { status: 303 });
       }
 
+      // Tenta inserir; se houver duplicidade, tratamos e avisamos
       const { data, error } = await supabase
         .from("orcamentos")
         .insert([{ user_id: user.id, nome, uf, bdi }])
@@ -29,7 +32,14 @@ export async function POST(request: Request) {
         .single();
 
       if (error) {
-        return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+        // Código de duplicidade costuma ser 23505 no Postgres
+        const msg = encodeURIComponent(
+          error.code === "23505"
+            ? "Já existe um orçamento com esse nome."
+            : (error.message || "Não foi possível criar o orçamento.")
+        );
+        const u = new URL(`/orcamentos?error=${msg}`, request.url);
+        return NextResponse.redirect(u, { status: 303 });
       }
 
       return NextResponse.redirect(new URL(`/orcamentos/${data!.id}`, request.url), { status: 303 });
@@ -47,13 +57,13 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, error: "Informe o código da composição." }, { status: 400 });
       }
 
-      const { data: comp, error: compErr } = await supabase
+      const { data: comp } = await supabase
         .from("composicoes")
         .select("id")
         .eq("codigo", codigo)
         .single();
 
-      if (compErr || !comp) {
+      if (!comp) {
         return NextResponse.json({ ok: false, error: "Composição não encontrada para o código informado." }, { status: 404 });
       }
 
@@ -74,13 +84,11 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, error: "ID ausente." }, { status: 400 });
       }
 
-      // Apaga itens primeiro (por segurança, mesmo com ON DELETE CASCADE em alguns esquemas)
       await supabase.from("orcamento_itens").delete().eq("orcamento_id", id);
-
-      // Apaga o orçamento (RLS garante que o usuário só apaga o que é dele)
       const { error } = await supabase.from("orcamentos").delete().eq("id", id);
       if (error) {
-        return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+        const u = new URL(`/orcamentos?error=${encodeURIComponent(error.message)}`, request.url);
+        return NextResponse.redirect(u, { status: 303 });
       }
 
       return NextResponse.redirect(new URL("/orcamentos", request.url), { status: 303 });
@@ -88,6 +96,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: false, error: "Ação inválida." }, { status: 400 });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "Erro inesperado." }, { status: 500 });
+    const u = new URL(`/orcamentos?error=${encodeURIComponent(e?.message || "Erro inesperado.")}`, request.url);
+    return NextResponse.redirect(u, { status: 303 });
   }
 }
