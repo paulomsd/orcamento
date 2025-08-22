@@ -13,15 +13,17 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const id = params.id;
   const resumo = await calculateOrcamentoDetalhado(id);
 
-  const rows = resumo.itens.map(i => ({
+  // Use 'any' to keep things simple for TS here
+  const rows: any[] = resumo.itens.map(i => ({
     Composicao: `${i.codigo} - ${i.nome}`,
     Unitario: Number(i.custo_unitario.toFixed(2)),
     Quantidade: i.quantidade,
     Subtotal: Number(i.subtotal.toFixed(2)),
   }));
 
+  // Rodapé como strings para evitar conflito de tipos
   rows.push({ Composicao: "", Unitario: "", Quantidade: "Custo direto", Subtotal: Number(resumo.total.toFixed(2)) });
-  rows.push({ Composicao: "", Unitario: "", Quantidade: "BDI (%)", Subtotal: resumo.bdi });
+  rows.push({ Composicao: "", Unitario: "", Quantidade: "BDI (%)", Subtotal: Number(resumo.bdi.toFixed ? resumo.bdi.toFixed(2) : resumo.bdi) });
   rows.push({ Composicao: "", Unitario: "", Quantidade: "Total", Subtotal: Number(resumo.total_com_bdi.toFixed(2)) });
 
   const wb = XLSX.utils.book_new();
