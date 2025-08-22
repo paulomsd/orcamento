@@ -16,7 +16,7 @@ export function createClient() {
           try {
             cookieStore.set({ name, value, ...options });
           } catch {
-            // em rotas serverless, pode falhar fora do request; tudo bem
+            // em rotas serverless, pode falhar fora do request
           }
         },
         remove(name: string, options: CookieOptions) {
