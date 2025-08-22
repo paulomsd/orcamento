@@ -1,16 +1,28 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import DeleteOrcamentoButton from "./DeleteButton";
 
 export default async function Page() {
   const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user }, error: userErr } = await supabase.auth.getUser();
+  if (userErr) {
+    return <div className="text-red-600">Erro de autenticação.</div>;
+  }
   if (!user) redirect("/login");
 
-  const { data: rows } = await supabase
+  const { data: rows, error } = await supabase
     .from("orcamentos")
-    .select("id, nome, bdi, uf")
+    .select("id, nome, bdi, uf, created_at")
     .order("created_at", { ascending: false });
+
+  if (error) {
+    return (
+      <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl">
+        Erro ao carregar seus orçamentos: {error.message}
+      </div>
+    );
+  }
 
   const estados = [
     "AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT",
@@ -79,29 +91,13 @@ export default async function Page() {
                 <td className="p-2 text-right">{Number(o.bdi || 0)}%</td>
                 <td className="p-2 text-right">
                   <div className="flex gap-3 justify-end">
-                    <Link className="text-blue-600 underline" href={`/orcamentos/${o.id}`}>
-                      Abrir
-                    </Link>
-                    <form
-                      action="/api/orcamentos"
-                      method="POST"
-                      onSubmit={(e) => {
-                        // browser confirm
-                        // @ts-ignore
-                        if (!confirm("Tem certeza que deseja apagar este orçamento?")) {
-                          e.preventDefault();
-                        }
-                      }}
-                    >
-                      <input type="hidden" name="action" value="delete_orcamento" />
-                      <input type="hidden" name="id" value={o.id} />
-                      <button className="text-red-600 underline">Apagar</button>
-                    </form>
+                    <a className="text-blue-600 underline" href={`/orcamentos/${o.id}`}>Abrir</a>
+                    <DeleteOrcamentoButton id={o.id} />
                   </div>
                 </td>
               </tr>
             ))}
-            {!rows?.length && (
+            {!rows?.length and (
               <tr>
                 <td className="p-4 text-slate-500" colSpan={4}>
                   Nenhum orçamento ainda.
