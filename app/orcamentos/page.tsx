@@ -68,7 +68,7 @@ export default async function Page() {
               <th className="text-left p-2">Nome</th>
               <th className="text-center p-2">UF</th>
               <th className="text-right p-2">BDI</th>
-              <th className="p-2"></th>
+              <th className="p-2 text-right">Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -78,9 +78,26 @@ export default async function Page() {
                 <td className="p-2 text-center">{o.uf || "-"}</td>
                 <td className="p-2 text-right">{Number(o.bdi || 0)}%</td>
                 <td className="p-2 text-right">
-                  <Link className="text-blue-600 underline" href={`/orcamentos/${o.id}`}>
-                    Abrir
-                  </Link>
+                  <div className="flex gap-3 justify-end">
+                    <Link className="text-blue-600 underline" href={`/orcamentos/${o.id}`}>
+                      Abrir
+                    </Link>
+                    <form
+                      action="/api/orcamentos"
+                      method="POST"
+                      onSubmit={(e) => {
+                        // browser confirm
+                        // @ts-ignore
+                        if (!confirm("Tem certeza que deseja apagar este orçamento?")) {
+                          e.preventDefault();
+                        }
+                      }}
+                    >
+                      <input type="hidden" name="action" value="delete_orcamento" />
+                      <input type="hidden" name="id" value={o.id} />
+                      <button className="text-red-600 underline">Apagar</button>
+                    </form>
+                  </div>
                 </td>
               </tr>
             ))}
