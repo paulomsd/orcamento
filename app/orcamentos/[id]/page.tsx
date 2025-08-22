@@ -2,16 +2,23 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 
-export default async function Page({ params }: { params: { id: string } }){
+export default async function Page({ params }: { params: { id: string } }) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if(!user) redirect("/login");
+  if (!user) redirect("/login");
 
   const id = params.id;
-  const { data: orcamento } = await supabase.from("orcamentos").select("*").eq("id", id).single();
-  if(!orcamento) return <div>Orçamento não encontrado.</div>;
 
-  const { data: itens } = await supabase.from("orcamento_itens")
+  const { data: orcamento } = await supabase
+    .from("orcamentos")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (!orcamento) return <div>Orçamento não encontrado.</div>;
+
+  const { data: itens } = await supabase
+    .from("orcamento_itens")
     .select("id, quantidade, composicoes(id, codigo, nome)")
     .eq("orcamento_id", id)
     .order("id");
@@ -33,11 +40,11 @@ export default async function Page({ params }: { params: { id: string } }){
         <div className="grid sm:grid-cols-3 gap-3 items-end">
           <label className="grid gap-1">
             <span className="text-sm">Código da Composição</span>
-            <input className="border rounded-lg px-3 py-2" name="codigo" placeholder="ex: 7.1.001"/>
+            <input className="border rounded-lg px-3 py-2" name="codigo" placeholder="ex: 7.1.001" />
           </label>
           <label className="grid gap-1">
             <span className="text-sm">Quantidade</span>
-            <input className="border rounded-lg px-3 py-2" type="number" step="0.01" name="quantidade" defaultValue="1"/>
+            <input className="border rounded-lg px-3 py-2" type="number" step="0.01" name="quantidade" defaultValue="1" />
           </label>
           <button className="bg-slate-900 text-white rounded-lg py-2">Adicionar item</button>
         </div>
@@ -52,34 +59,16 @@ export default async function Page({ params }: { params: { id: string } }){
             </tr>
           </thead>
           <tbody>
-            {itens?.map((i)=>(
-              <tr key={i.id} className="border-t">
-                <td className="p-2">{i.composicoes?.codigo} - {i.composicoes?.nome}</td>
-                <td className="p-2 text-right">{i.quantidade}</td>
-              </tr>
-            ))}
+            {itens?.map((i: any) => {
+              // Pode chegar como objeto ou array dependendo do retorno
+              const comp = Array.isArray(i.composicoes) ? i.composicoes[0] : i.composicoes;
+              return (
+                <tr key={i.id} className="border-t">
+                  <td className="p-2">{comp?.codigo} - {comp?.nome}</td>
+                  <td className="p-2 text-right">{Number(i.quantidade)}</td>
+                </tr>
+              );
+            })}
             {!itens?.length && (
               <tr><td colSpan={2} className="p-4 text-slate-500">Nenhum item ainda.</td></tr>
             )}
-          </tbody>
-        </table>
-      </div>
-
-      <Resumo id={id}/>
-    </div>
-  );
-}
-
-async function Resumo({ id }: { id: string }){
-  const supabase = createClient();
-  const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/api/orcamentos/${id}/resumo`, { cache: "no-store" }).catch(()=>null);
-  const data = res ? await res.json() : { total: 0, bdi: 0, total_com_bdi: 0 };
-  return (
-    <div className="bg-white rounded-xl border p-4">
-      <div className="text-sm text-slate-500 mb-2">Resumo</div>
-      <div className="text-sm">Custo direto: <b>R$ {data.total.toFixed(2)}</b></div>
-      <div className="text-sm">BDI: <b>{data.bdi}%</b></div>
-      <div className="text-lg mt-2">Total: <b>R$ {data.total_com_bdi.toFixed(2)}</b></div>
-    </div>
-  );
-}
