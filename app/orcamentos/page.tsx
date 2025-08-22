@@ -5,10 +5,7 @@ import DeleteOrcamentoButton from "./DeleteButton";
 
 export default async function Page() {
   const supabase = createClient();
-  const { data: { user }, error: userErr } = await supabase.auth.getUser();
-  if (userErr) {
-    return <div className="text-red-600">Erro de autenticação.</div>;
-  }
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
   const { data: rows, error } = await supabase
@@ -91,13 +88,15 @@ export default async function Page() {
                 <td className="p-2 text-right">{Number(o.bdi || 0)}%</td>
                 <td className="p-2 text-right">
                   <div className="flex gap-3 justify-end">
-                    <a className="text-blue-600 underline" href={`/orcamentos/${o.id}`}>Abrir</a>
+                    <Link className="text-blue-600 underline" href={`/orcamentos/${o.id}`}>
+                      Abrir
+                    </Link>
                     <DeleteOrcamentoButton id={o.id} />
                   </div>
                 </td>
               </tr>
             ))}
-            {!rows?.length and (
+            {!rows?.length && (
               <tr>
                 <td className="p-4 text-slate-500" colSpan={4}>
                   Nenhum orçamento ainda.
