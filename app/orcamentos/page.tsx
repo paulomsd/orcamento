@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import DeleteOrcamentoButton from "./DeleteButton";
 
-export default async function Page() {
+export default async function Page({ searchParams }: { searchParams?: { [key: string]: string | string[] | undefined } }) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -13,23 +13,23 @@ export default async function Page() {
     .select("id, nome, bdi, uf, created_at")
     .order("created_at", { ascending: false });
 
-  if (error) {
-    return (
-      <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl">
-        Erro ao carregar seus orçamentos: {error.message}
-      </div>
-    );
-  }
-
   const estados = [
     "AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT",
     "MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO",
     "RR","SC","SP","SE","TO"
   ];
 
+  const errorMsg = typeof searchParams?.error === "string" ? decodeURIComponent(searchParams!.error) : undefined;
+
   return (
     <div className="grid gap-6">
       <h1 className="text-xl font-semibold">Orçamentos</h1>
+
+      {errorMsg && (
+        <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-700">
+          {errorMsg}
+        </div>
+      )}
 
       <form action="/api/orcamentos" method="POST" className="bg-white p-4 rounded-xl border grid gap-3 sm:grid-cols-4 items-end">
         <input type="hidden" name="action" value="create_orcamento" />
