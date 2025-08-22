@@ -10,10 +10,10 @@ export async function GET(_: Request, { params }: { params: { id: string }}) {
 
   // 👉 use Uint8Array para agradar o TypeScript
   const chunks: Uint8Array[] = [];
-  doc.on("data", (c: Uint8Array) => chunks.push(c));
-  const streamEnd = new Promise<Buffer>((resolve) => {
-    doc.on("end", () => resolve(Buffer.concat(chunks.map(c => Buffer.from(c)))));
-  });
+doc.on("data", (c: Uint8Array) => chunks.push(c));
+const streamEnd = new Promise<Buffer>((resolve) => {
+  doc.on("end", () => resolve(Buffer.concat(chunks)));
+});
 
   doc.fontSize(16).text(`Orçamento: ${orcamento.nome}`);
   doc.moveDown(0.5);
